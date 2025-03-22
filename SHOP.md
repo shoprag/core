@@ -37,7 +37,7 @@ Every Shop plugin must implement the `Shop` interface from `@shoprag/core`. Here
 ```typescript
 export interface Shop {
     requiredCredentials(): { [credentialName: string]: string };
-    init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>;
+    init(credentials: { [key: string]: string }, config: JsonObject): Promise<void>;
     update(
         lastUsed: number,
         existingFiles: { [fileId: string]: number }
@@ -56,7 +56,7 @@ export interface Shop {
    - **Purpose**: Initializes the Shop with credentials and configuration from `shoprag.json`.
    - **Parameters**:
      - `credentials`: User-provided secrets (e.g., `{ github_token: "your-token" }`).
-     - `config`: Shop-specific settings (e.g., `{ repoUrl: "https://github.com/user/repo" }`).
+     - `config`: Shop-specific settings as a `JsonObject` (e.g., `{ repoUrl: "https://github.com/user/repo", include: ["**/*.md"], ignore: ["node_modules/**"] }`).
    - **Why**: Sets up connections or state before fetching data, like authenticating with the GitHub API.
 
 3. **`update(lastUsed, existingFiles)`**
@@ -146,7 +146,7 @@ Create `src/index.ts` as the entry point.
 
 ### Step 2: Defining Configuration
 
-Our Shop will read its settings from `shoprag.json`. Here’s an example configuration:
+Our Shop will read its settings from `shoprag.json`. Here’s an example configuration using direct JSON arrays for `include` and `ignore`:
 
 ```json
 {
@@ -155,15 +155,13 @@ Our Shop will read its settings from `shoprag.json`. Here’s an example configu
     "repoUrl": "https://github.com/user/repo",
     "branch": "main",
     "updateInterval": "1d",
-    "include": "[\"**/*.md\", \"**/*.txt\"]",
-    "ignore": "[\"node_modules/**\", \".github/**\"]"
+    "include": ["**/*.md", "**/*.txt"],
+    "ignore": ["node_modules/**", ".github/**"]
   }
 }
 ```
 
-- **Why JSON strings for arrays?**: ShopRAG’s `config` expects string values, so we’ll parse these arrays in the Shop.
-
-TODO (ShopRAG Devs): Can we support complex JSON structures beyond just strings in config objects please?
+- **Why direct JSON arrays?**: The updated ShopRAG core now supports complex JSON types in `config`, allowing us to use arrays directly for `include` and `ignore`. This makes the configuration more intuitive and eliminates the need to parse JSON strings.
 
 ---
 
@@ -197,10 +195,10 @@ import { Octokit } from '@octokit/rest';
 
 export default class GitHubRepoShop implements Shop {
     private octokit: Octokit;
-    private config: { [key: string]: string };
+    private config: JsonObject;
     private updateIntervalMs: number;
 
-    async init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void> {
+    async init(credentials: { [key: string]: string }, config: JsonObject): Promise<void> {
         this.config = config;
         const token = credentials['github_token'];
         if (!token) {
@@ -209,7 +207,7 @@ export default class GitHubRepoShop implements Shop {
         this.octokit = new Octokit({ auth: token });
 
         const interval = config['updateInterval'] || '1d';
-        this.updateIntervalMs = this.parseInterval(interval);
+        this.updateIntervalMs = this.parseInterval(interval as string);
     }
 
     private parseInterval(interval: string): number {
@@ -229,6 +227,7 @@ export default class GitHubRepoShop implements Shop {
 
 - **Why store config and credentials?**: We need them later for API calls and update logic.
 - **Why parse the interval?**: Converting to milliseconds allows easy time comparisons in `update`.
+- **Note**: We cast `interval` as a string since it’s still provided as a string value in this field, despite the `JsonObject` type.
 
 ---
 
@@ -242,7 +241,7 @@ Parse the owner and repo from the URL:
 
 ```typescript
 private getRepoInfo(): { owner: string; repo: string } {
-    const url = this.config['repoUrl'];
+    const url = this.config['repoUrl'] as string;
     const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
     if (!match) {
         throw new Error(`Invalid GitHub repo URL: ${url}`);
@@ -258,7 +257,7 @@ Get all files from the specified branch:
 ```typescript
 private async getRepoTree(): Promise<any> {
     const { owner, repo } = this.getRepoInfo();
-    const branch = this.config['branch'] || 'main';
+    const branch = this.config['branch'] as string || 'master';
     const response = await this.octokit.git.getTree({
         owner,
         repo,
@@ -271,14 +270,14 @@ private async getRepoTree(): Promise<any> {
 
 #### Applying Include/Ignore Filters
 
-Use `minimatch` to filter files:
+Use `minimatch` to filter files, accessing `include` and `ignore` as arrays:
 
 ```typescript
 import { minimatch } from 'minimatch';
 
 private shouldInclude(path: string): boolean {
-    const includePatterns = this.config['include'] ? JSON.parse(this.config['include']) : ['**/*'];
-    const ignorePatterns = this.config['ignore'] ? JSON.parse(this.config['ignore']) : [];
+    const includePatterns = this.config['include'] ? this.config['include'] as string[] : ['**/*'];
+    const ignorePatterns = this.config['ignore'] ? this.config['ignore'] as string[] : [];
 
     const isIncluded = includePatterns.some((pattern: string) => minimatch(path, pattern));
     const isIgnored = ignorePatterns.some((pattern: string) => minimatch(path, pattern));
@@ -339,7 +338,7 @@ Check when a file was last modified:
 ```typescript
 private async getLastCommitTimeForFile(path: string): Promise<number> {
     const { owner, repo } = this.getRepoInfo();
-    const branch = this.config['branch'] || 'main';
+    const branch = this.config['branch'] as string || 'master';
     const response = await this.octokit.repos.listCommits({
         owner,
         repo,
@@ -431,11 +430,11 @@ Here’s the complete, production-ready `index.ts`:
 ```typescript
 import { Shop } from '@shoprag/core';
 import { Octokit } from '@octokit/rest';
-import { minimatch } from 'minimatch';
+import { minimatch, JsonObject } from 'minimatch';
 
 export default class GitHubRepoShop implements Shop {
     private octokit: Octokit;
-    private config: { [key: string]: string };
+    private config: JsonObject;
     private updateIntervalMs: number;
 
     requiredCredentials(): { [credentialName: string]: string } {
@@ -448,7 +447,7 @@ export default class GitHubRepoShop implements Shop {
         };
     }
 
-    async init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void> {
+    async init(credentials: { [key: string]: string }, config: JsonObject): Promise<void> {
         this.config = config;
         const token = credentials['github_token'];
         if (!token) {
@@ -457,7 +456,7 @@ export default class GitHubRepoShop implements Shop {
         this.octokit = new Octokit({ auth: token });
 
         const interval = config['updateInterval'] || '1d';
-        this.updateIntervalMs = this.parseInterval(interval);
+        this.updateIntervalMs = this.parseInterval(interval as string);
     }
 
     private parseInterval(interval: string): number {
@@ -473,7 +472,7 @@ export default class GitHubRepoShop implements Shop {
     }
 
     private getRepoInfo(): { owner: string; repo: string } {
-        const url = this.config['repoUrl'];
+        const url = this.config['repoUrl'] as string;
         const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
         if (!match) {
             throw new Error(`Invalid GitHub repo URL: ${url}`);
@@ -483,7 +482,7 @@ export default class GitHubRepoShop implements Shop {
 
     private async getRepoTree(): Promise<any> {
         const { owner, repo } = this.getRepoInfo();
-        const branch = this.config['branch'] || 'main';
+        const branch = this.config['branch'] as string || 'master';
         const response = await this.octokit.git.getTree({
             owner,
             repo,
@@ -494,8 +493,8 @@ export default class GitHubRepoShop implements Shop {
     }
 
     private shouldInclude(path: string): boolean {
-        const includePatterns = this.config['include'] ? JSON.parse(this.config['include']) : ['**/*'];
-        const ignorePatterns = this.config['ignore'] ? JSON.parse(this.config['ignore']) : [];
+        const includePatterns = this.config['include'] ? this.config['include'] as string[] : ['**/*'];
+        const ignorePatterns = this.config['ignore'] ? this.config['ignore'] as string[] : [];
         const isIncluded = includePatterns.some((pattern: string) => minimatch(path, pattern));
         const isIgnored = ignorePatterns.some((pattern: string) => minimatch(path, pattern));
         return isIncluded && !isIgnored;
@@ -529,7 +528,7 @@ export default class GitHubRepoShop implements Shop {
 
     private async getLastCommitTimeForFile(path: string): Promise<number> {
         const { owner, repo } = this.getRepoInfo();
-        const branch = this.config['branch'] || 'main';
+        const branch = this.config['branch'] as string || 'master';
         const response = await this.octokit.repos.listCommits({
             owner,
             repo,

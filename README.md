@@ -122,10 +122,10 @@ The `shoprag.json` file defines your project. It resides in the project’s work
 - **`ShopRAG`**: The configuration version (currently `"1.0"`).
 - **`Shops`**: An array of Shop definitions:
   - **`from`**: The Shop plugin name (e.g., `"github-repo"` uses `@shoprag/shop-github-repo`).
-  - **`config`**: A dictionary of plugin-specific settings (strings only).
+  - **`config`**: A dictionary of plugin-specific settings.
 - **`RAGs`**: An array of RAG definitions:
   - **`to`**: The RAG plugin name (e.g., `"dir"` uses `@shoprag/rag-dir`).
-  - **`config`**: A dictionary of plugin-specific settings (strings only).
+  - **`config`**: A dictionary of plugin-specific settings.
 
 Each Shop and RAG plugin defines its own `config` requirements—check their documentation for details.
 
@@ -205,7 +205,7 @@ Implement the `Shop` interface:
 ```typescript
 export interface Shop {
   requiredCredentials(): { [credentialName: string]: string };
-  init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>;
+  init(credentials: { [key: string]: string }, config: { [key: string]: any }): Promise<void>;
   update(
     lastUsed: number,
     existingFiles: { [fileId: string]: number }
@@ -223,7 +223,7 @@ Implement the `RAG` interface:
 ```typescript
 export interface RAG {
   requiredCredentials(): { [credentialName: string]: string };
-  init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>;
+  init(credentials: { [key: string]: string }, config: { [key: string]: any }): Promise<void>;
   addFile(fileId: string, content: string): Promise<void>;
   updateFile(fileId: string, content: string): Promise<void>;
   deleteFile(fileId: string): Promise<void>;

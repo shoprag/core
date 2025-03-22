@@ -28,7 +28,7 @@ Every RAG plugin must implement the `RAG` interface defined in `@shoprag/core`. 
 ```typescript
 export interface RAG {
     requiredCredentials(): { [credentialName: string]: string };
-    init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>;
+    init(credentials: { [key: string]: string }, config: JsonObject): Promise<void>;
     addFile(fileId: string, content: string): Promise<void>;
     updateFile(fileId: string, content: string): Promise<void>;
     deleteFile(fileId: string): Promise<void>;
@@ -44,7 +44,7 @@ export interface RAG {
    - **Returns**: A dictionary where keys are credential names, and values are instructions for obtaining them.
    - **Why**: Ensures users provide necessary secrets during setup, stored in `~/.shoprag/creds.json`.
 
-2. **`init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>`**
+2. **`init(credentials: { [key: string]: string }, config: JsonObject): Promise<void>`**
    - **Purpose**: Initializes the RAG with credentials and configuration from `shoprag.json`.
    - **Parameters**:
      - `credentials`: User-provided secrets.
@@ -195,7 +195,7 @@ requiredCredentials(): { [credentialName: string]: string } {
 The `init` method sets up the output directory.
 
 ```typescript
-async init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void> {
+async init(credentials: { [key: string]: string }, config: JsonObject): Promise<void> {
     if (!config['outputDir']) {
         throw new Error('outputDir must be specified in the config');
     }
@@ -414,16 +414,16 @@ Here’s the complete, production-ready implementation:
 ```typescript
 import * as fs from 'fs';
 import * as path from 'path';
-import { RAG } from '@shoprag/core';
+import { RAG, JsonObject } from '@shoprag/core';
 
-export class DirRAG implements RAG {
+export default class DirRAG implements RAG {
     private outputDir: string;
 
     requiredCredentials(): { [credentialName: string]: string } {
         return {};
     }
 
-    async init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void> {
+    async init(credentials: { [key: string]: string }, config: JsonObject): Promise<void> {
         if (!config['outputDir']) {
             throw new Error('outputDir must be specified in the config');
         }

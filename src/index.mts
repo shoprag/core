@@ -40,7 +40,7 @@ export interface Shop {
      * @param credentials - The user-supplied credentials required by this Shop
      * @param config - The shop-specific config from shoprag.json
      */
-    init(credentials: { [credentialName: string]: string }, config: { [key: string]: string }): Promise<void>;
+    init(credentials: { [credentialName: string]: string }, config: JsonObject): Promise<void>;
 
     /**
      * Generate a dictionary of file-level updates (including adds, updates, or deletes)
@@ -91,7 +91,7 @@ export interface RAG {
      * @param credentials - The user-supplied credentials required by this RAG
      * @param config - The RAG-specific config from shoprag.json
      */
-    init(credentials: { [credentialName: string]: string }, config: { [key: string]: string }): Promise<void>;
+    init(credentials: { [credentialName: string]: string }, config: JsonObject): Promise<void>;
 
     /**
      * Add a new file with the given fileId and content to the RAG.
@@ -130,6 +130,15 @@ export interface RAG {
 }
 
 /**
+ * Types for JSON values to support complex config structures
+ */
+type JsonValue = string | number | boolean | null | JsonObject | JsonArray;
+export interface JsonObject {
+    [key: string]: JsonValue;
+}
+interface JsonArray extends Array<JsonValue> { }
+
+/**
  * The shape of the shoprag.json file that defines a "Project".
  */
 interface ShopragJson {
@@ -137,11 +146,11 @@ interface ShopragJson {
     ShopRAG: string;
     Shops: Array<{
         from: string; // plugin name, e.g. "github-repo"
-        config: { [key: string]: string };
+        config: JsonObject;
     }>;
     RAGs: Array<{
         to: string; // plugin name, e.g. "dir"
-        config: { [key: string]: string };
+        config: JsonObject;
     }>;
 }
 
@@ -337,6 +346,127 @@ function getShopIdentifier(shopDef: { from: string }, index: number): string {
 }
 
 /**
+ * Utility function to set a value in an object by path, supporting nested objects and arrays
+ */
+function setByPath(obj: any, path: string, value: any) {
+    const parts = path.split('.');
+    let current = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+        let part = parts[i];
+        if (part.endsWith(']')) {
+            const match = part.match(/(.+)\[(\d+)\]/);
+            if (match) {
+                const key = match[1];
+                const index = parseInt(match[2], 10);
+                if (!current[key]) {
+                    current[key] = [];
+                }
+                while (current[key].length <= index) {
+                    current[key].push({});
+                }
+                current = current[key][index];
+            } else {
+                throw new Error(`Invalid path: ${path}`);
+            }
+        } else {
+            if (!current[part] || typeof current[part] !== 'object') {
+                current[part] = {};
+            }
+            current = current[part];
+        }
+    }
+    let lastPart = parts[parts.length - 1];
+    if (lastPart.endsWith(']')) {
+        const match = lastPart.match(/(.+)\[(\d+)\]/);
+        if (match) {
+            const key = match[1];
+            const index = parseInt(match[2], 10);
+            if (!current[key]) {
+                current[key] = [];
+            }
+            while (current[key].length <= index) {
+                current[key].push(null);
+            }
+            current[key][index] = value;
+        } else {
+            throw new Error(`Invalid path: ${path}`);
+        }
+    } else {
+        current[lastPart] = value;
+    }
+}
+
+/**
+ * Utility function to delete a value from an object by path, supporting nested objects and arrays
+ */
+function deleteByPath(obj: any, path: string) {
+    const parts = path.split('.');
+    let current = obj;
+    for (let i = 0; i < parts.length - 1; i++) {
+        let part = parts[i];
+        if (part.endsWith(']')) {
+            const match = part.match(/(.+)\[(\d+)\]/);
+            if (match) {
+                const key = match[1];
+                const index = parseInt(match[2], 10);
+                if (!current[key] || !Array.isArray(current[key]) || index >= current[key].length) {
+                    return; // Path doesn't exist
+                }
+                current = current[key][index];
+            } else {
+                return; // Invalid path
+            }
+        } else {
+            if (!current[part] || typeof current[part] !== 'object') {
+                return; // Path doesn't exist
+            }
+            current = current[part];
+        }
+    }
+    let lastPart = parts[parts.length - 1];
+    if (lastPart.endsWith(']')) {
+        const match = lastPart.match(/(.+)\[(\d+)\]/);
+        if (match) {
+            const key = match[1];
+            const index = parseInt(match[2], 10);
+            if (current[key] && Array.isArray(current[key]) && index < current[key].length) {
+                current[key].splice(index, 1);
+            }
+        }
+    } else {
+        delete current[lastPart];
+    }
+}
+
+/**
+ * Utility function to flatten a config object into a list of paths and values for display
+ */
+function flattenConfig(obj: any, prefix = ''): string[] {
+    let result: string[] = [];
+    if (Array.isArray(obj)) {
+        obj.forEach((item, index) => {
+            const path = `${prefix}[${index}]`;
+            if (typeof item === 'object' && item !== null) {
+                result = result.concat(flattenConfig(item, path));
+            } else {
+                result.push(`${path}: ${JSON.stringify(item)}`);
+            }
+        });
+    } else if (typeof obj === 'object' && obj !== null) {
+        for (const key in obj) {
+            const value = obj[key];
+            const path = prefix ? `${prefix}.${key}` : key;
+            if (typeof value === 'object' && value !== null) {
+                result = result.concat(flattenConfig(value, path));
+            } else {
+                result.push(`${path}: ${JSON.stringify(value)}`);
+            }
+        }
+    }
+    return result;
+}
+
+/**
  * Commander-based CLI program definition
  */
 const program = new Command();
@@ -505,61 +635,69 @@ async function runConfigEditor() {
                     }
                 ]);
                 const shop = shopragData.Shops[shopIndex];
-                console.log(`\nCurrent config for ${shop.from}:`, shop.config);
+                console.log(`\nCurrent config for ${shop.from}:\n${JSON.stringify(shop.config, null, 2)}`);
 
                 let doneShopConfig = false;
                 while (!doneShopConfig) {
+                    console.log('\nCurrent config paths:');
+                    const flatConfig = flattenConfig(shop.config);
+                    flatConfig.forEach(path => console.log(path));
+
                     const { shopConfigChoice } = await inquirer.prompt([
                         {
                             type: 'list',
                             name: 'shopConfigChoice',
                             message: `Configure Shop "${shop.from}"`,
                             choices: [
-                                { name: 'Add/Update Config Key', value: 'addUpdate' },
-                                { name: 'Delete Config Key', value: 'delete' },
+                                { name: 'Set Config Value by Path', value: 'set' },
+                                { name: 'Delete Config Value by Path', value: 'delete' },
                                 { name: 'Done', value: 'done' }
                             ]
                         }
                     ]);
 
-                    if (shopConfigChoice === 'addUpdate') {
-                        const { key, value } = await inquirer.prompt([
+                    if (shopConfigChoice === 'set') {
+                        const { path } = await inquirer.prompt([
                             {
                                 type: 'input',
-                                name: 'key',
-                                message: 'Enter config key:'
-                            },
-                            {
-                                type: 'input',
-                                name: 'value',
-                                message: 'Enter config value (string only):'
+                                name: 'path',
+                                message: 'Enter the config path to set (e.g., "key" or "key.subkey"):'
                             }
                         ]);
-                        shop.config[key] = value;
-                        saveShopragJson(shopragData);
-                        console.log(`✅ Updated config for Shop "${shop.from}".`);
-                    } else if (shopConfigChoice === 'delete') {
-                        const configKeys = Object.keys(shop.config);
-                        if (configKeys.length === 0) {
-                            console.log('No config keys to delete.');
-                        } else {
-                            const { keyToDelete } = await inquirer.prompt([
-                                {
-                                    type: 'list',
-                                    name: 'keyToDelete',
-                                    message: 'Select a config key to delete:',
-                                    choices: configKeys
+                        const { valueStr } = await inquirer.prompt([
+                            {
+                                type: 'input',
+                                name: 'valueStr',
+                                message: 'Enter the new value as JSON (e.g., "string", 123, true, null, {"key": "value"}, [1,2,3]):',
+                                validate: (input) => {
+                                    try {
+                                        JSON.parse(input);
+                                        return true;
+                                    } catch (err) {
+                                        return 'Invalid JSON. Please try again.';
+                                    }
                                 }
-                            ]);
-                            delete shop.config[keyToDelete];
-                            saveShopragJson(shopragData);
-                            console.log(`✅ Deleted config key "${keyToDelete}".`);
-                        }
+                            }
+                        ]);
+                        const value = JSON.parse(valueStr);
+                        setByPath(shop.config, path, value);
+                        saveShopragJson(shopragData);
+                        console.log(`✅ Set config at path "${path}".`);
+                    } else if (shopConfigChoice === 'delete') {
+                        const { pathToDelete } = await inquirer.prompt([
+                            {
+                                type: 'input',
+                                name: 'pathToDelete',
+                                message: 'Enter the config path to delete (e.g., "key" or "key.subkey"):'
+                            }
+                        ]);
+                        deleteByPath(shop.config, pathToDelete);
+                        saveShopragJson(shopragData);
+                        console.log(`✅ Deleted config at path "${pathToDelete}".`);
                     } else {
                         doneShopConfig = true;
                     }
                 }
-
                 break;
             }
             case 'addRag': {
@@ -617,56 +755,65 @@ async function runConfigEditor() {
                     }
                 ]);
                 const rag = shopragData.RAGs[ragIndex];
-                console.log(`\nCurrent config for ${rag.to}:`, rag.config);
+                console.log(`\nCurrent config for ${rag.to}:\n${JSON.stringify(rag.config, null, 2)}`);
 
                 let doneRagConfig = false;
                 while (!doneRagConfig) {
+                    console.log('\nCurrent config paths:');
+                    const flatConfig = flattenConfig(rag.config);
+                    flatConfig.forEach(path => console.log(path));
+
                     const { ragConfigChoice } = await inquirer.prompt([
                         {
                             type: 'list',
                             name: 'ragConfigChoice',
                             message: `Configure RAG "${rag.to}"`,
                             choices: [
-                                { name: 'Add/Update Config Key', value: 'addUpdate' },
-                                { name: 'Delete Config Key', value: 'delete' },
+                                { name: 'Set Config Value by Path', value: 'set' },
+                                { name: 'Delete Config Value by Path', value: 'delete' },
                                 { name: 'Done', value: 'done' }
                             ]
                         }
                     ]);
 
-                    if (ragConfigChoice === 'addUpdate') {
-                        const { key, value } = await inquirer.prompt([
+                    if (ragConfigChoice === 'set') {
+                        const { path } = await inquirer.prompt([
                             {
                                 type: 'input',
-                                name: 'key',
-                                message: 'Enter config key:'
-                            },
-                            {
-                                type: 'input',
-                                name: 'value',
-                                message: 'Enter config value (string only):'
+                                name: 'path',
+                                message: 'Enter the config path to set (e.g., "key" or "key.subkey"):'
                             }
                         ]);
-                        rag.config[key] = value;
-                        saveShopragJson(shopragData);
-                        console.log(`✅ Updated config for RAG "${rag.to}".`);
-                    } else if (ragConfigChoice === 'delete') {
-                        const configKeys = Object.keys(rag.config);
-                        if (configKeys.length === 0) {
-                            console.log('No config keys to delete.');
-                        } else {
-                            const { keyToDelete } = await inquirer.prompt([
-                                {
-                                    type: 'list',
-                                    name: 'keyToDelete',
-                                    message: 'Select a config key to delete:',
-                                    choices: configKeys
+                        const { valueStr } = await inquirer.prompt([
+                            {
+                                type: 'input',
+                                name: 'valueStr',
+                                message: 'Enter the new value as JSON (e.g., "string", 123, true, null, {"key": "value"}, [1,2,3]):',
+                                validate: (input) => {
+                                    try {
+                                        JSON.parse(input);
+                                        return true;
+                                    } catch (err) {
+                                        return 'Invalid JSON. Please try again.';
+                                    }
                                 }
-                            ]);
-                            delete rag.config[keyToDelete];
-                            saveShopragJson(shopragData);
-                            console.log(`✅ Deleted config key "${keyToDelete}".`);
-                        }
+                            }
+                        ]);
+                        const value = JSON.parse(valueStr);
+                        setByPath(rag.config, path, value);
+                        saveShopragJson(shopragData);
+                        console.log(`✅ Set config at path "${path}".`);
+                    } else if (ragConfigChoice === 'delete') {
+                        const { pathToDelete } = await inquirer.prompt([
+                            {
+                                type: 'input',
+                                name: 'pathToDelete',
+                                message: 'Enter the config path to delete (e.g., "key" or "key.subkey"):'
+                            }
+                        ]);
+                        deleteByPath(rag.config, pathToDelete);
+                        saveShopragJson(shopragData);
+                        console.log(`✅ Deleted config at path "${pathToDelete}".`);
                     } else {
                         doneRagConfig = true;
                     }
