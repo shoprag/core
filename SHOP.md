@@ -190,7 +190,7 @@ requiredCredentials(): { [credentialName: string]: string } {
 The `init` method sets up the Shop with credentials and config:
 
 ```typescript
-import { Shop } from '@shoprag/core';
+import { Shop, JsonObject } from '@shoprag/core';
 import { Octokit } from '@octokit/rest';
 
 export default class GitHubRepoShop implements Shop {
@@ -428,9 +428,9 @@ async update(
 Here’s the complete, production-ready `index.ts`:
 
 ```typescript
-import { Shop } from '@shoprag/core';
+import { Shop, JsonObject } from '@shoprag/core';
 import { Octokit } from '@octokit/rest';
-import { minimatch, JsonObject } from 'minimatch';
+import { minimatch } from 'minimatch';
 
 export default class GitHubRepoShop implements Shop {
     private octokit: Octokit;
