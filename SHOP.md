@@ -93,14 +93,24 @@ Install required dependencies:
 npm install @shoprag/core @octokit/rest minimatch
 ```
 
+Also add `typescript` and `@types/node` for development:
+
+```bash
+npm install --save-dev typescript @types/node
+```
+
 Update `package.json` to make it a ShopRAG plugin:
 
 ```json
 {
   "name": "@shoprag/shop-github-repo",
   "version": "1.0.0",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc"
+  },
   "description": "A ShopRAG plugin for fetching files from a GitHub repository.",
   "keywords": ["shoprag", "shop", "github"],
   "author": "Your Name",
@@ -108,7 +118,29 @@ Update `package.json` to make it a ShopRAG plugin:
 }
 ```
 
-Create `index.ts` as the entry point.
+Create `tsconfig.json`:
+
+```json
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ES2020",
+        "moduleResolution": "node",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": false,
+        "allowJs": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "declaration": true
+    },
+    "include": [
+        "src"
+    ]
+}
+```
+
+Create `src/index.ts` as the entry point.
 
 ---
 
@@ -130,6 +162,8 @@ Our Shop will read its settings from `shoprag.json`. Here’s an example configu
 ```
 
 - **Why JSON strings for arrays?**: ShopRAG’s `config` expects string values, so we’ll parse these arrays in the Shop.
+
+TODO (ShopRAG Devs): Can we support complex JSON structures beyond just strings in config objects please?
 
 ---
 
@@ -229,7 +263,7 @@ private async getRepoTree(): Promise<any> {
         owner,
         repo,
         tree_sha: branch,
-        recursive: true
+        recursive: 'true'
     });
     return response.data.tree;
 }
@@ -454,7 +488,7 @@ export default class GitHubRepoShop implements Shop {
             owner,
             repo,
             tree_sha: branch,
-            recursive: true
+            recursive: 'true'
         });
         return response.data.tree;
     }

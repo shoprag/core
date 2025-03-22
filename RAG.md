@@ -1,4 +1,4 @@
-# RAG Plugin Tutorial
+# RAG Plugin Development Guide
 
 Welcome to this comprehensive guide on creating a **RAG plugin** for ShopRAG! In this tutorial, we'll walk you through the process of building a fully-featured `@shoprag/rag-dir` plugin step-by-step. By the end, you'll have a production-ready RAG that stores data as `.txt` files in a specified local directory, and you'll deeply understand the "how" and "why" behind RAG plugins in the ShopRAG ecosystem.
 
@@ -105,16 +105,36 @@ Since ShopRAG uses TypeScript, we’ll create a TypeScript project.
    ```
 
 2. **Install Dependencies**
-   We’ll use Node.js built-in `fs` and `path` modules, but we need TypeScript and type definitions:
+   We’ll use Node.js built-in `fs` and `path` modules, but we need TypeScript and type definitions. We also need `@shoprag/core` for the `RAG` interface:
    ```bash
    npm install typescript @types/node --save-dev
-   npx tsc --init
+   npm install @shoprag/core
    ```
 
-   The `tsconfig.json` is generated. The defaults are fine, but ensure `"outDir": "dist"` is set for compilation.
+   Now let's create `tsconfig.json`:
+
+   ```json
+   {
+     "compilerOptions": {
+        "target": "ES2020",
+        "module": "ES2020",
+        "moduleResolution": "node",
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": false,
+        "allowJs": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "declaration": true
+    },
+    "include": [
+        "src"
+    ]
+   }
+   ```
 
 3. **Update `package.json`**
-   Set the package name and main entry point:
+   Set the package name and main entry point. Also make sure `type` is set to `module`:
    ```json
    {
      "name": "@shoprag/rag-dir",
@@ -122,6 +142,7 @@ Since ShopRAG uses TypeScript, we’ll create a TypeScript project.
      "description": "ShopRAG RAG plugin for storing files in a local directory",
      "main": "dist/index.js",
      "types": "dist/index.d.ts",
+     "type": "module",
      "scripts": {
        "build": "tsc"
      },
@@ -146,6 +167,7 @@ Create `index.ts` in the project root and start coding.
 ```typescript
 import * as fs from 'fs';
 import * as path from 'path';
+import { RAG } from '@shoprag/core';
 
 export class DirRAG implements RAG {
     private outputDir: string;
@@ -392,16 +414,7 @@ Here’s the complete, production-ready implementation:
 ```typescript
 import * as fs from 'fs';
 import * as path from 'path';
-
-export interface RAG {
-    requiredCredentials(): { [credentialName: string]: string };
-    init(credentials: { [key: string]: string }, config: { [key: string]: string }): Promise<void>;
-    addFile(fileId: string, content: string): Promise<void>;
-    updateFile(fileId: string, content: string): Promise<void>;
-    deleteFile(fileId: string): Promise<void>;
-    finalize(): Promise<void>;
-    deleteAllFiles(): Promise<void>;
-}
+import { RAG } from '@shoprag/core';
 
 export class DirRAG implements RAG {
     private outputDir: string;

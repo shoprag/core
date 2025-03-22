@@ -718,36 +718,49 @@ program
         // 1) Load credentials
         let creds = loadOrInitializeCredentials();
 
-        // 2) Make sure all shops and rags are installed & up to date, then import them
+        // 2) Determine and install all required plugins upfront
+        const shopPlugins = shopragData.Shops.map(s => `@shoprag/shop-${s.from}`);
+        const ragPlugins = shopragData.RAGs.map(r => `@shoprag/rag-${r.to}`);
+        const requiredPlugins = [...new Set([...shopPlugins, ...ragPlugins])]; // Remove duplicates
+
+        console.log('\n🔍 Checking installed plugins...\n');
+        const { stdout } = spawnSync('npm', ['list', '-g', '--depth=0', '--json'], { encoding: 'utf-8' });
+        const installedPackages = JSON.parse(stdout).dependencies || {};
+        const installedPluginNames = Object.keys(installedPackages);
+        const missingPlugins = requiredPlugins.filter(p => !installedPluginNames.includes(p));
+
+        if (missingPlugins.length > 0) {
+            console.log(`\n🔨 Installing missing plugins: ${missingPlugins.join(', ')}`);
+            const installResult = spawnSync('npm', ['install', '-g', ...missingPlugins], { stdio: 'inherit' });
+            if (installResult.status !== 0) {
+                console.error('Failed to install plugins. Please check the output above.');
+                process.exit(1);
+            }
+            console.log('✅ All plugins installed successfully.\n');
+        }
+
+        // 3) Import all shops and rags
         const shops: Shop[] = [];
-        const rags: RAG[] = [];
-
-        console.log('\n🔧 Checking for required Shop plugins...\n');
-        for (let i = 0; i < shopragData.Shops.length; i++) {
-            const shopDef = shopragData.Shops[i];
+        console.log('\n🔧 Loading Shop plugins...\n');
+        for (const shopDef of shopragData.Shops) {
             const pluginName = `@shoprag/shop-${shopDef.from}`;
-            const pluginModule = await importOrInstallPlugin(pluginName);
-            const shopInstance: Shop = pluginModule.default
-                ? new pluginModule.default()
-                : new pluginModule();
-
+            const pluginModule = await import(pluginName);
+            const shopInstance: Shop = pluginModule.default ? new pluginModule.default() : new pluginModule();
             shops.push(shopInstance);
+            console.log(`✅ Loaded Shop: ${shopDef.from}`);
         }
 
-        console.log('\n🔧 Checking for required RAG plugins...\n');
-        for (let i = 0; i < shopragData.RAGs.length; i++) {
-            const ragDef = shopragData.RAGs[i];
+        const rags: RAG[] = [];
+        console.log('\n🔧 Loading RAG plugins...\n');
+        for (const ragDef of shopragData.RAGs) {
             const pluginName = `@shoprag/rag-${ragDef.to}`;
-            const pluginModule = await importOrInstallPlugin(pluginName);
-
-            // Similar assumption as above
-            const ragInstance: RAG = pluginModule.default
-                ? new pluginModule.default()
-                : new pluginModule();
+            const pluginModule = await import(pluginName);
+            const ragInstance: RAG = pluginModule.default ? new pluginModule.default() : new pluginModule();
             rags.push(ragInstance);
+            console.log(`✅ Loaded RAG: ${ragDef.to}`);
         }
 
-        // 3) For each shop & rag, see what credentials they require, prompt user if missing
+        // 4) For each shop & rag, see what credentials they require, prompt user if missing
         //    Then re-load them so that we can pass them in once everything is available
         for (let i = 0; i < shops.length; i++) {
             const shopDef = shopragData.Shops[i];
@@ -768,10 +781,11 @@ program
                 console.error(`Error retrieving required credentials for RAG "${ragDef.to}": ${err}`);
             }
         }
+
         // reload updated creds in case we added some
         creds = loadOrInitializeCredentials();
 
-        // 4) Initialize all Shops and RAGs
+        // 5) Initialize all Shops and RAGs
         console.log('\n🚀 Initializing all Shops and RAGs...\n');
         for (let i = 0; i < shops.length; i++) {
             const shopDef = shopragData.Shops[i];
@@ -785,10 +799,10 @@ program
             console.log(`✅ Initialized RAG [${ragDef.to}]`);
         }
 
-        // 5) Load lock file
+        // 6) Load lock file
         let lockData = loadOrInitializeLockJson();
 
-        // 6) Gather updates from all Shops
+        // 7) Gather updates from all Shops
         console.log('\n📡 Gathering updates from Shops...\n');
         const aggregatedUpdates: {
             [fileId: string]: {
@@ -845,7 +859,7 @@ program
             }
         }
 
-        // 7) Apply updates to all RAGs
+        // 8) Apply updates to all RAGs
         if (Object.keys(aggregatedUpdates).length === 0) {
             console.log('\nNo new updates from Shops. RAG updates skipped.\n');
         } else {
@@ -880,9 +894,8 @@ program
             }
         }
 
-        // 8) Save the updated lock file
+        // 9) Save the updated lock file
         saveLockJson(lockData);
-
         console.log(`\n🎉 All done!`);
     });
 
