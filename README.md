@@ -8,6 +8,10 @@
 
 Whether you're aggregating content from GitHub repositories, YouTube channels, or custom sources, `@shoprag/core` unifies the process, making it easy to integrate with storage systems like local directories, S3 buckets, or even vector databases.
 
+## Why?
+
+Because Ty Everett got SICK AND TIRED of managing data pipelines and AI context across systems, normalizing it, keeping it updated all the time, and the world needed a better way.
+
 ## Key Features
 
 - **Configuration Management**: Define projects with a `shoprag.json` file, specifying Shops, RAGs, and their configurations.
@@ -23,6 +27,10 @@ Install `@shoprag/core` globally using npm to access the `shoprag` CLI:
 ```bash
 npm install -g @shoprag/core
 ```
+
+## Awesome Examples
+
+Check out [shoprag/awesome](https://github.com/shoprag/awesome) for links to all Shops, RAGs, and `shoprag.json` files from around the ecosystem!
 
 ## Usage
 
