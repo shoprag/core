@@ -6,7 +6,7 @@
     "types": "dist/index.d.mts",
     "type": "module",
     "bin": {
-        "shoprag": "dist/index.js"
+        "shoprag": "dist/index.mjs"
     },
     "scripts": {
         "build": "tsc -b"
