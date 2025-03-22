@@ -199,7 +199,7 @@ async init(credentials: { [key: string]: string }, config: JsonObject): Promise<
     if (!config['outputDir']) {
         throw new Error('outputDir must be specified in the config');
     }
-    this.outputDir = path.resolve(process.cwd(), config['outputDir']);
+    this.outputDir = path.resolve(process.cwd(), config['outputDir'] as string);
     if (!fs.existsSync(this.outputDir)) {
         fs.mkdirSync(this.outputDir, { recursive: true });
     }
@@ -427,7 +427,7 @@ export default class DirRAG implements RAG {
         if (!config['outputDir']) {
             throw new Error('outputDir must be specified in the config');
         }
-        this.outputDir = path.resolve(process.cwd(), config['outputDir']);
+        this.outputDir = path.resolve(process.cwd(), config['outputDir'] as string);
         if (!fs.existsSync(this.outputDir)) {
             fs.mkdirSync(this.outputDir, { recursive: true });
         }
