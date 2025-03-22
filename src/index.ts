@@ -249,12 +249,12 @@ function saveLockJson(lockData: ShopragLockJson): void {
 }
 
 /**
- * Dynamically install a plugin from NPM (global install).
- * This function uses "npm install -g" under the hood.
+ * Dynamically install a plugin from NPM (local install).
+ * This function uses "npm install" under the hood.
  */
-function installPluginGlobally(pluginName: string) {
-    console.log(`\n🔨 Installing plugin "${pluginName}" globally via npm...`);
-    const result = spawnSync('npm', ['install', '-g', pluginName], { stdio: 'inherit' });
+function installPluginLocally(pluginName: string) {
+    console.log(`\n🔨 Installing plugin "${pluginName}" locally via npm...`);
+    const result = spawnSync('npm', ['install', pluginName], { stdio: 'inherit', cwd: process.cwd() });
     if (result.status !== 0) {
         throw new Error(`Failed to install plugin "${pluginName}".`);
     }
@@ -262,19 +262,17 @@ function installPluginGlobally(pluginName: string) {
 }
 
 /**
- * Try requiring a plugin. If it doesn't exist, attempt to install it globally.
- * Then require it again. If it still fails, throw an error.
+ * Try importing a plugin. If it doesn't exist, attempt to install it locally.
+ * Then import it again. If it still fails, throw an error.
  */
-function requireOrInstallPlugin(pluginName: string) {
-    let plugin: any;
+async function importOrInstallPlugin(pluginName: string): Promise<any> {
     try {
-        plugin = require(pluginName);
+        return await import(pluginName);
     } catch (e) {
-        console.log(`Plugin "${pluginName}" not found. Attempting to install...`);
-        installPluginGlobally(pluginName);
-        // try again
+        console.log(`Plugin "${pluginName}" not found. Attempting to install locally...`);
+        installPluginLocally(pluginName);
         try {
-            plugin = require(pluginName);
+            return await import(pluginName);
         } catch (err) {
             throw new Error(
                 `Could not load plugin "${pluginName}" after installing. ` +
@@ -282,7 +280,6 @@ function requireOrInstallPlugin(pluginName: string) {
             );
         }
     }
-    return plugin;
 }
 
 /**
@@ -349,6 +346,26 @@ program
     .description('ShopRAG: A command-line utility to unify data from multiple Shops and store into multiple RAGs.')
     .version('1.0.0');
 
+async function createShopragJson() {
+    const { projectName } = await inquirer.prompt([
+        {
+            type: 'input',
+            name: 'projectName',
+            message: 'Enter a name for this project:'
+        }
+    ]);
+
+    const newData: ShopragJson = {
+        Project_Name: projectName,
+        ShopRAG: '1.0',
+        Shops: [],
+        RAGs: []
+    };
+
+    saveShopragJson(newData);
+    console.log(`\n✅ Created new shoprag.json with project name: ${projectName}\n`);
+}
+
 /**
  * Subcommand: shoprag create
  *
@@ -374,26 +391,7 @@ program
                 return;
             }
         }
-
-        const { projectName } = await inquirer.prompt([
-            {
-                type: 'input',
-                name: 'projectName',
-                message: 'Enter a name for this project:'
-            }
-        ]);
-
-        const newData: ShopragJson = {
-            Project_Name: projectName,
-            ShopRAG: '1.0',
-            Shops: [],
-            RAGs: []
-        };
-
-        saveShopragJson(newData);
-
-        console.log(`\n✅ Created new shoprag.json with project name: ${projectName}\n`);
-        // Now jump to config subcommand to allow further editing
+        await createShopragJson();
         await runConfigEditor();
     });
 
@@ -709,8 +707,12 @@ program
         if (!shopragData) {
             // No shoprag.json => run "create" flow
             console.log('No shoprag.json found. Starting creation wizard...');
-            await program.parseAsync(['create']);
-            return;
+            await createShopragJson();
+            shopragData = loadShopragJson();
+            if (!shopragData) {
+                console.error('Failed to create shoprag.json. Exiting.');
+                process.exit(1);
+            }
         }
 
         // 1) Load credentials
@@ -724,11 +726,7 @@ program
         for (let i = 0; i < shopragData.Shops.length; i++) {
             const shopDef = shopragData.Shops[i];
             const pluginName = `@shoprag/shop-${shopDef.from}`;
-            const pluginModule = requireOrInstallPlugin(pluginName);
-
-            // pluginModule should either be the actual plugin or an object containing it
-            // We assume that pluginModule.default or pluginModule exports an object
-            // implementing `Shop`.
+            const pluginModule = await importOrInstallPlugin(pluginName);
             const shopInstance: Shop = pluginModule.default
                 ? new pluginModule.default()
                 : new pluginModule();
@@ -740,7 +738,7 @@ program
         for (let i = 0; i < shopragData.RAGs.length; i++) {
             const ragDef = shopragData.RAGs[i];
             const pluginName = `@shoprag/rag-${ragDef.to}`;
-            const pluginModule = requireOrInstallPlugin(pluginName);
+            const pluginModule = await importOrInstallPlugin(pluginName);
 
             // Similar assumption as above
             const ragInstance: RAG = pluginModule.default

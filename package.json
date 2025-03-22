@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "description": "Unified pipeline for effortlessly sourcing, normalizing, and managing data from anywhere.",
     "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "type": "module",
     "bin": {
         "shoprag": "dist/index.js"

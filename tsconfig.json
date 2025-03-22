@@ -4,6 +4,7 @@
         "module": "NodeNext",
         "outDir": "dist",
         "esModuleInterop": true,
+        "declaration": true,
         "strict": false,
         "allowJs": true,
         "skipLibCheck": true
