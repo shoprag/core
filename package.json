@@ -2,8 +2,8 @@
     "name": "@shoprag/core",
     "version": "1.0.2",
     "description": "Unified pipeline for effortlessly sourcing, normalizing, and managing data from anywhere.",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "dist/index.mjs",
+    "types": "dist/index.d.mts",
     "type": "module",
     "bin": {
         "shoprag": "dist/index.js"

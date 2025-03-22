@@ -249,12 +249,12 @@ function saveLockJson(lockData: ShopragLockJson): void {
 }
 
 /**
- * Dynamically install a plugin from NPM (local install).
- * This function uses "npm install" under the hood.
+ * Dynamically install a plugin from NPM (global install).
+ * This function uses "npm install -g" under the hood.
  */
-function installPluginLocally(pluginName: string) {
-    console.log(`\n🔨 Installing plugin "${pluginName}" locally via npm...`);
-    const result = spawnSync('npm', ['install', pluginName], { stdio: 'inherit', cwd: process.cwd() });
+function installPluginGlobally(pluginName: string) {
+    console.log(`\n🔨 Installing plugin "${pluginName}" globally via npm...`);
+    const result = spawnSync('npm', ['install', '-g', pluginName], { stdio: 'inherit' });
     if (result.status !== 0) {
         throw new Error(`Failed to install plugin "${pluginName}".`);
     }
@@ -262,15 +262,15 @@ function installPluginLocally(pluginName: string) {
 }
 
 /**
- * Try importing a plugin. If it doesn't exist, attempt to install it locally.
+ * Try importing a plugin. If it doesn't exist, attempt to install it globally.
  * Then import it again. If it still fails, throw an error.
  */
 async function importOrInstallPlugin(pluginName: string): Promise<any> {
     try {
         return await import(pluginName);
     } catch (e) {
-        console.log(`Plugin "${pluginName}" not found. Attempting to install locally...`);
-        installPluginLocally(pluginName);
+        console.log(`Plugin "${pluginName}" not found. Attempting to install...`);
+        installPluginGlobally(pluginName);
         try {
             return await import(pluginName);
         } catch (err) {
