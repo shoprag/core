@@ -1,6 +1,6 @@
 {
     "name": "@shoprag/core",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "description": "Unified pipeline for effortlessly sourcing, normalizing, and managing data from anywhere.",
     "main": "dist/index.mjs",
     "types": "dist/index.d.mts",
