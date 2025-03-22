@@ -172,6 +172,10 @@ interface ShopragLockJson {
             lastUpdated: number;
         };
     };
+    // Permissions for unofficial plugins, mapping plugin names to allowed credentials
+    pluginPermissions: {
+        [pluginName: string]: string[];
+    };
 }
 
 /**
@@ -242,11 +246,16 @@ function loadOrInitializeLockJson(): ShopragLockJson {
     if (!fs.existsSync(lockPath)) {
         return {
             shopLastUsed: {},
-            fileOrigins: {}
+            fileOrigins: {},
+            pluginPermissions: {}
         };
     }
     const data = fs.readFileSync(lockPath, 'utf-8');
-    return JSON.parse(data) as ShopragLockJson;
+    const lockData = JSON.parse(data) as ShopragLockJson;
+    if (!lockData.pluginPermissions) {
+        lockData.pluginPermissions = {};
+    }
+    return lockData;
 }
 
 /**
@@ -866,8 +875,8 @@ program
         let creds = loadOrInitializeCredentials();
 
         // 2) Determine and install all required plugins upfront
-        const shopPlugins = shopragData.Shops.map(s => `@shoprag/shop-${s.from}`);
-        const ragPlugins = shopragData.RAGs.map(r => `@shoprag/rag-${r.to}`);
+        const shopPlugins = shopragData.Shops.map(s => s.from.startsWith('UNOFFICIAL:') ? s.from.split(':')[1] : `@shoprag/shop-${s.from}`);
+        const ragPlugins = shopragData.RAGs.map(r => r.to.startsWith('UNOFFICIAL:') ? r.to.split(':')[1] : `@shoprag/rag-${r.to}`);
         const requiredPlugins = [...new Set([...shopPlugins, ...ragPlugins])]; // Remove duplicates
 
         console.log('\n🔍 Checking installed plugins...\n');
@@ -890,8 +899,8 @@ program
         const shops: Shop[] = [];
         console.log('\n🔧 Loading Shop plugins...\n');
         for (const shopDef of shopragData.Shops) {
-            const pluginName = `@shoprag/shop-${shopDef.from}`;
-            const pluginModule = await import(pluginName);
+            const pluginName = shopDef.from.startsWith('UNOFFICIAL:') ? shopDef.from.split(':')[1] : `@shoprag/shop-${shopDef.from}`;
+            const pluginModule = await importOrInstallPlugin(pluginName);
             const shopInstance: Shop = pluginModule.default ? new pluginModule.default() : new pluginModule();
             shops.push(shopInstance);
             console.log(`✅ Loaded Shop: ${shopDef.from}`);
@@ -900,8 +909,8 @@ program
         const rags: RAG[] = [];
         console.log('\n🔧 Loading RAG plugins...\n');
         for (const ragDef of shopragData.RAGs) {
-            const pluginName = `@shoprag/rag-${ragDef.to}`;
-            const pluginModule = await import(pluginName);
+            const pluginName = ragDef.to.startsWith('UNOFFICIAL:') ? ragDef.to.split(':')[1] : `@shoprag/rag-${ragDef.to}`;
+            const pluginModule = await importOrInstallPlugin(pluginName);
             const ragInstance: RAG = pluginModule.default ? new pluginModule.default() : new pluginModule();
             rags.push(ragInstance);
             console.log(`✅ Loaded RAG: ${ragDef.to}`);
@@ -929,27 +938,129 @@ program
             }
         }
 
-        // reload updated creds in case we added some
+        // Reload updated creds in case we added some
         creds = loadOrInitializeCredentials();
+
+        // Load lock file
+        let lockData = loadOrInitializeLockJson();
+
+        // Handle permissions for unofficial Shops
+        for (let i = 0; i < shopragData.Shops.length; i++) {
+            const shopDef = shopragData.Shops[i];
+            if (shopDef.from.startsWith("UNOFFICIAL:")) {
+                const pluginName = shopDef.from;
+                const requiredCreds = shops[i].requiredCredentials();
+                const permissions = lockData.pluginPermissions[pluginName] || [];
+                for (const cred of Object.keys(requiredCreds)) {
+                    if (!permissions.includes(cred)) {
+                        console.log(`\n⚠️  Warning: The unofficial plugin "${pluginName}" requires access to credential "${cred}".`);
+                        console.log(`If you do not trust the publisher of this plugin, do not allow access, especially if the credential is tied to APIs where you could be charged money.`);
+                        const { allow } = await inquirer.prompt([
+                            {
+                                type: 'confirm',
+                                name: 'allow',
+                                message: `Allow "${pluginName}" to access "${cred}"? (denying will remove the Shop)`,
+                                default: false
+                            }
+                        ]);
+                        if (allow) {
+                            if (!lockData.pluginPermissions[pluginName]) {
+                                lockData.pluginPermissions[pluginName] = [];
+                            }
+                            lockData.pluginPermissions[pluginName].push(cred);
+                        } else {
+                            // Remove the shop from configuration
+                            shopragData.Shops.splice(i, 1);
+                            i--; // Adjust index
+                            saveShopragJson(shopragData);
+                            console.log(`Removed unofficial Shop "${pluginName}" from configuration.`);
+                            // Also remove the shop instance
+                            shops.splice(i, 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle permissions for unofficial RAGs
+        for (let i = 0; i < shopragData.RAGs.length; i++) {
+            const ragDef = shopragData.RAGs[i];
+            if (ragDef.to.startsWith("UNOFFICIAL:")) {
+                const pluginName = ragDef.to;
+                const requiredCreds = rags[i].requiredCredentials();
+                const permissions = lockData.pluginPermissions[pluginName] || [];
+                for (const cred of Object.keys(requiredCreds)) {
+                    if (!permissions.includes(cred)) {
+                        console.log(`\n⚠️  Warning: The unofficial plugin "${pluginName}" requires access to credential "${cred}".`);
+                        console.log(`If you do not trust the publisher of this plugin, do not allow access, especially if the credential is tied to APIs where you could be charged money.`);
+                        const { allow } = await inquirer.prompt([
+                            {
+                                type: 'confirm',
+                                name: 'allow',
+                                message: `Allow "${pluginName}" to access "${cred}"? (denying will remove the RAG)`,
+                                default: false
+                            }
+                        ]);
+                        if (allow) {
+                            if (!lockData.pluginPermissions[pluginName]) {
+                                lockData.pluginPermissions[pluginName] = [];
+                            }
+                            lockData.pluginPermissions[pluginName].push(cred);
+                        } else {
+                            // Remove the rag from configuration
+                            shopragData.RAGs.splice(i, 1);
+                            i--; // Adjust index
+                            saveShopragJson(shopragData);
+                            console.log(`Removed unofficial RAG "${pluginName}" from configuration.`);
+                            // Also remove the rag instance
+                            rags.splice(i, 1);
+                        }
+                    }
+                }
+            }
+        }
 
         // 5) Initialize all Shops and RAGs
         console.log('\n🚀 Initializing all Shops and RAGs...\n');
         for (let i = 0; i < shops.length; i++) {
             const shopDef = shopragData.Shops[i];
-            await shops[i].init(creds, shopDef.config);
+            const isUnofficial = shopDef.from.startsWith("UNOFFICIAL:");
+            const requiredCreds = shops[i].requiredCredentials();
+            let allowedCreds: string[] = [];
+            if (isUnofficial) {
+                const pluginName = shopDef.from;
+                const permissions = lockData.pluginPermissions[pluginName] || [];
+                allowedCreds = Object.keys(requiredCreds).filter(cred => permissions.includes(cred));
+            } else {
+                allowedCreds = Object.keys(requiredCreds);
+            }
+            const credsToPass = Object.fromEntries(
+                allowedCreds.map(cred => [cred, creds[cred]])
+            );
+            await shops[i].init(credsToPass, shopDef.config);
             console.log(`✅ Initialized Shop [${shopDef.from}]`);
         }
 
         for (let i = 0; i < rags.length; i++) {
             const ragDef = shopragData.RAGs[i];
-            await rags[i].init(creds, ragDef.config);
+            const isUnofficial = ragDef.to.startsWith("UNOFFICIAL:");
+            const requiredCreds = rags[i].requiredCredentials();
+            let allowedCreds: string[] = [];
+            if (isUnofficial) {
+                const pluginName = ragDef.to;
+                const permissions = lockData.pluginPermissions[pluginName] || [];
+                allowedCreds = Object.keys(requiredCreds).filter(cred => permissions.includes(cred));
+            } else {
+                allowedCreds = Object.keys(requiredCreds);
+            }
+            const credsToPass = Object.fromEntries(
+                allowedCreds.map(cred => [cred, creds[cred]])
+            );
+            await rags[i].init(credsToPass, ragDef.config);
             console.log(`✅ Initialized RAG [${ragDef.to}]`);
         }
 
-        // 6) Load lock file
-        let lockData = loadOrInitializeLockJson();
-
-        // 7) Gather updates from all Shops
+        // 6) Gather updates from all Shops
         console.log('\n📡 Gathering updates from Shops...\n');
         const aggregatedUpdates: {
             [fileId: string]: {
@@ -1006,7 +1117,7 @@ program
             }
         }
 
-        // 8) Apply updates to all RAGs
+        // 7) Apply updates to all RAGs
         if (Object.keys(aggregatedUpdates).length === 0) {
             console.log('\nNo new updates from Shops. RAG updates skipped.\n');
         } else {
@@ -1041,7 +1152,7 @@ program
             }
         }
 
-        // 9) Save the updated lock file
+        // 8) Save the updated lock file
         saveLockJson(lockData);
         console.log(`\n🎉 All done!`);
     });
