@@ -1,0 +1,26 @@
+{
+    "name": "@shoprag/core",
+    "version": "1.0.0",
+    "description": "Unified pipeline for effortlessly sourcing, normalizing, and managing data from anywhere.",
+    "main": "dist/index.js",
+    "type": "module",
+    "bin": {
+        "shoprag": "dist/index.js"
+    },
+    "scripts": {
+        "build": "tsc -b"
+    },
+    "keywords": [],
+    "author": "Peer-to-peer Privacy Systems Research, LLC",
+    "license": "MIT",
+    "dependencies": {
+        "commander": "^13.1.0",
+        "inquirer": "^12.5.0"
+    },
+    "devDependencies": {
+        "@types/fs-extra": "^11.0.4",
+        "@types/node": "^22.10.1",
+        "@types/tar": "^6.1.13",
+        "typescript": "^5.7.2"
+    }
+}
