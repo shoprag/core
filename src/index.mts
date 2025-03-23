@@ -901,7 +901,7 @@ program
         for (const shopDef of shopragData.Shops) {
             const pluginName = shopDef.from.startsWith('UNOFFICIAL:') ? shopDef.from.split(':')[1] : `@shoprag/shop-${shopDef.from}`;
             const pluginModule = await importOrInstallPlugin(pluginName);
-            const shopInstance: Shop = pluginModule.default ? new pluginModule.default() : new pluginModule();
+            const shopInstance: Shop = pluginModule.default ? new pluginModule.default(shopDef.config) : new pluginModule(shopDef.config);
             shops.push(shopInstance);
             console.log(`✅ Loaded Shop: ${shopDef.from}`);
         }
@@ -911,7 +911,7 @@ program
         for (const ragDef of shopragData.RAGs) {
             const pluginName = ragDef.to.startsWith('UNOFFICIAL:') ? ragDef.to.split(':')[1] : `@shoprag/rag-${ragDef.to}`;
             const pluginModule = await importOrInstallPlugin(pluginName);
-            const ragInstance: RAG = pluginModule.default ? new pluginModule.default() : new pluginModule();
+            const ragInstance: RAG = pluginModule.default ? new pluginModule.default(ragDef.config) : new pluginModule(ragDef.config);
             rags.push(ragInstance);
             console.log(`✅ Loaded RAG: ${ragDef.to}`);
         }
